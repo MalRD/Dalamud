@@ -10,6 +10,7 @@ using Dalamud.Logging.Internal;
 using Dalamud.Plugin.Internal.Exceptions;
 using Dalamud.Plugin.Internal.Loader;
 using Dalamud.Plugin.Internal.Types;
+using Dalamud.Utility;
 
 namespace Dalamud.Plugin.Internal
 {
@@ -25,8 +26,8 @@ namespace Dalamud.Plugin.Internal
         private readonly FileInfo disabledFile;
         private readonly FileInfo testingFile;
 
-        private PluginLoader loader;
-        private Assembly pluginAssembly;
+        private PluginLoader? loader;
+        private Assembly? pluginAssembly;
         private Type? pluginType;
         private IDalamudPlugin? instance;
 
@@ -140,7 +141,7 @@ namespace Dalamud.Plugin.Internal
         /// <summary>
         /// Gets the <see cref="DalamudPluginInterface"/> associated with this plugin.
         /// </summary>
-        public DalamudPluginInterface DalamudInterface { get; private set; }
+        public DalamudPluginInterface? DalamudInterface { get; private set; }
 
         /// <summary>
         /// Gets the path to the plugin DLL.
@@ -155,18 +156,18 @@ namespace Dalamud.Plugin.Internal
         /// <summary>
         /// Gets or sets the current state of the plugin.
         /// </summary>
-        public PluginState State { get; protected set; } = PluginState.Unloaded;
+        public PluginState State { get; protected set; }
 
         /// <summary>
         /// Gets the AssemblyName plugin, populated during <see cref="Load(PluginLoadReason, bool)"/>.
         /// </summary>
         /// <returns>Plugin type.</returns>
-        public AssemblyName? AssemblyName { get; private set; } = null;
+        public AssemblyName? AssemblyName { get; private set; }
 
         /// <summary>
         /// Gets the plugin name, directly from the plugin or if it is not loaded from the manifest.
         /// </summary>
-        public string Name => this.instance?.Name ?? this.Manifest.Name ?? this.DllFile.Name;
+        public string Name => this.instance?.Name ?? this.Manifest.Name;
 
         /// <summary>
         /// Gets an optional reason, if the plugin is banned.
@@ -209,7 +210,7 @@ namespace Dalamud.Plugin.Internal
             this.instance?.Dispose();
             this.instance = null;
 
-            this.DalamudInterface?.Dispose();
+            this.DalamudInterface?.ExplicitDispose();
             this.DalamudInterface = null;
 
             this.pluginType = null;
@@ -259,7 +260,7 @@ namespace Dalamud.Plugin.Internal
 
             if (this.DllFile.DirectoryName != null && File.Exists(Path.Combine(this.DllFile.DirectoryName, "Dalamud.dll")))
             {
-                Log.Error("==== IMPORTANT MESSAGE TO {0}, THE DEVELOPER OF {1} ====", this.Manifest.Author, this.Manifest.InternalName);
+                Log.Error("==== IMPORTANT MESSAGE TO {0}, THE DEVELOPER OF {1} ====", this.Manifest.Author!, this.Manifest.InternalName);
                 Log.Error("YOU ARE INCLUDING DALAMUD DEPENDENCIES IN YOUR BUILDS!!!");
                 Log.Error("You may not be able to load your plugin. \"<Private>False</Private>\" needs to be set in your csproj.");
                 Log.Error("If you are using ILMerge, do not merge anything other than your direct dependencies.");
@@ -271,13 +272,23 @@ namespace Dalamud.Plugin.Internal
             {
                 this.loader ??= PluginLoader.CreateFromAssemblyFile(this.DllFile.FullName, this.SetupLoaderConfig);
 
-                if (reloading)
+                if (reloading || this.IsDev)
                 {
-                    this.loader.Reload();
-
-                    // Reload the manifest in-case there were changes here too.
                     if (this.IsDev)
                     {
+                        // If a dev plugin is set to not autoload on boot, but we want to reload it at the arbitrary load
+                        // time, we need to essentially "Unload" the plugin, but we can't call plugin.Unload because of the
+                        // load state checks. Null any references to the assembly and types, then proceed with regular reload
+                        // operations.
+                        this.pluginAssembly = null;
+                        this.pluginType = null;
+                    }
+
+                    this.loader.Reload();
+
+                    if (this.IsDev)
+                    {
+                        // Reload the manifest in-case there were changes here too.
                         var manifestFile = LocalPluginManifest.GetManifestFile(this.DllFile);
                         if (manifestFile.Exists)
                         {
@@ -322,7 +333,7 @@ namespace Dalamud.Plugin.Internal
                 if (this.instance == null)
                 {
                     this.State = PluginState.LoadError;
-                    this.DalamudInterface.Dispose();
+                    this.DalamudInterface.ExplicitDispose();
                     Log.Error($"Error while loading {this.Name}, failed to bind and call the plugin constructor");
                     return;
                 }
@@ -372,7 +383,7 @@ namespace Dalamud.Plugin.Internal
                 this.instance?.Dispose();
                 this.instance = null;
 
-                this.DalamudInterface?.Dispose();
+                this.DalamudInterface?.ExplicitDispose();
                 this.DalamudInterface = null;
 
                 this.pluginType = null;

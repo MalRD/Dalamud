@@ -1,23 +1,26 @@
+﻿using System;
+
 namespace Dalamud.Game.ClientState.JobGauge.Enums
 {
     /// <summary>
-    /// DRG Blood of the Dragon state types.
+    /// MNK Nadi types.
     /// </summary>
-    public enum BOTDState : byte
+    [Flags]
+    public enum Nadi : byte
     {
         /// <summary>
-        /// Inactive type.
+        /// No card.
         /// </summary>
         NONE = 0,
 
         /// <summary>
-        /// Blood of the Dragon is active.
+        /// The Lunar nadi.
         /// </summary>
-        BOTD = 1,
+        LUNAR = 2,
 
         /// <summary>
-        /// Life of the Dragon is active.
+        /// The Solar nadi.
         /// </summary>
-        LOTD = 2,
+        SOLAR = 4,
     }
 }

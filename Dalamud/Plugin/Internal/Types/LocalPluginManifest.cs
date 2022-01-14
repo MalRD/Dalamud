@@ -1,5 +1,6 @@
 using System.IO;
 
+using Dalamud.Utility;
 using Newtonsoft.Json;
 
 namespace Dalamud.Plugin.Internal.Types
@@ -76,5 +77,23 @@ namespace Dalamud.Plugin.Internal.Types
         /// <param name="dllFile">The plugin DLL.</param>
         /// <returns>The <see cref="PluginManifest"/> .testing file.</returns>
         public static FileInfo GetTestingFile(FileInfo dllFile) => new(Path.Combine(dllFile.DirectoryName, ".testing"));
+
+        /// <summary>
+        /// Check if this manifest is valid.
+        /// </summary>
+        /// <returns>Whether or not this manifest is valid.</returns>
+        public bool CheckSanity()
+        {
+            if (this.InternalName.IsNullOrEmpty())
+                return false;
+
+            if (this.Name.IsNullOrEmpty())
+                return false;
+
+            if (this.DalamudApiLevel == 0)
+                return false;
+
+            return true;
+        }
     }
 }

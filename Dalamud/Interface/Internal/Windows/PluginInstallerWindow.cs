@@ -63,6 +63,7 @@ namespace Dalamud.Interface.Internal.Windows
         private string feedbackModalContact = string.Empty;
         private bool feedbackModalIncludeException = false;
         private PluginManifest? feedbackPlugin = null;
+        private bool feedbackIsTesting = false;
 
         private int updatePluginCount = 0;
         private List<PluginUpdateStatus>? updatedPlugins;
@@ -149,12 +150,16 @@ namespace Dalamud.Interface.Internal.Windows
 
             _ = pluginManager.ReloadPluginMastersAsync();
 
-            this.updatePluginCount = 0;
-            this.updatedPlugins = null;
-
             this.searchText = string.Empty;
             this.sortKind = PluginSortKind.Alphabetical;
             this.filterText = Locs.SortBy_Alphabetical;
+
+            if (this.updateStatus == OperationStatus.Complete || this.updateStatus == OperationStatus.Idle)
+            {
+                this.updateStatus = OperationStatus.Idle;
+                this.updatePluginCount = 0;
+                this.updatedPlugins = null;
+            }
         }
 
         /// <inheritdoc/>
@@ -387,6 +392,11 @@ namespace Dalamud.Interface.Internal.Windows
             {
                 ImGui.Text(Locs.FeedbackModal_Text(this.feedbackPlugin.Name));
 
+                if (this.feedbackPlugin?.FeedbackMessage != null)
+                {
+                    ImGui.TextWrapped(this.feedbackPlugin.FeedbackMessage);
+                }
+
                 if (this.pluginListUpdatable.Any(
                     up => up.InstalledPlugin.Manifest.InternalName == this.feedbackPlugin?.InternalName))
                 {
@@ -415,7 +425,7 @@ namespace Dalamud.Interface.Internal.Windows
                 {
                     if (this.feedbackPlugin != null)
                     {
-                        Task.Run(async () => await BugBait.SendFeedback(this.feedbackPlugin, this.feedbackModalBody, this.feedbackModalContact, this.feedbackModalIncludeException))
+                        Task.Run(async () => await BugBait.SendFeedback(this.feedbackPlugin, this.feedbackIsTesting, this.feedbackModalBody, this.feedbackModalContact, this.feedbackModalIncludeException))
                             .ContinueWith(
                                 t =>
                                 {
@@ -1062,6 +1072,12 @@ namespace Dalamud.Interface.Internal.Windows
                 ImGui.Image(this.imageCache.TroubleIcon.ImGuiHandle, iconSize);
                 ImGui.SameLine();
             }
+            else if (plugin != null)
+            {
+                ImGui.SetCursorPos(cursorBeforeImage);
+                ImGui.Image(this.imageCache.InstalledIcon.ImGuiHandle, iconSize);
+                ImGui.SameLine();
+            }
 
             ImGuiHelpers.ScaledDummy(5);
             ImGui.SameLine();
@@ -1226,9 +1242,9 @@ namespace Dalamud.Interface.Internal.Windows
 
                 this.DrawVisitRepoUrlButton(manifest.RepoUrl);
 
-                if (!manifest.SourceRepo.IsThirdParty)
+                if (!manifest.SourceRepo.IsThirdParty && manifest.AcceptsFeedback)
                 {
-                    this.DrawSendFeedbackButton(manifest);
+                    this.DrawSendFeedbackButton(manifest, false);
                 }
 
                 ImGuiHelpers.ScaledDummy(5);
@@ -1401,7 +1417,7 @@ namespace Dalamud.Interface.Internal.Windows
                 ImGui.TextColored(ImGuiColors.DalamudGrey3, downloadText);
 
                 var isThirdParty = manifest.IsThirdParty;
-                var canFeedback = !isThirdParty && !plugin.IsDev && plugin.Manifest.DalamudApiLevel == PluginManager.DalamudApiLevel;
+                var canFeedback = !isThirdParty && !plugin.IsDev && plugin.Manifest.DalamudApiLevel == PluginManager.DalamudApiLevel && plugin.Manifest.AcceptsFeedback;
 
                 // Installed from
                 if (plugin.IsDev)
@@ -1446,14 +1462,18 @@ namespace Dalamud.Interface.Internal.Windows
 
                 if (canFeedback)
                 {
-                    this.DrawSendFeedbackButton(plugin.Manifest);
+                    this.DrawSendFeedbackButton(plugin.Manifest, plugin.IsTesting);
                 }
 
                 if (availablePluginUpdate != default)
                     this.DrawUpdateSinglePluginButton(availablePluginUpdate);
 
                 ImGui.SameLine();
-                ImGui.TextColored(ImGuiColors.DalamudGrey3, $" v{plugin.Manifest.AssemblyVersion}");
+                var version = plugin.AssemblyName?.Version;
+                version ??= plugin.Manifest.Testing
+                                ? plugin.Manifest.TestingAssemblyVersion
+                                : plugin.Manifest.AssemblyVersion;
+                ImGui.TextColored(ImGuiColors.DalamudGrey3, $" v{version}");
 
                 if (plugin.IsDev)
                 {
@@ -1675,13 +1695,14 @@ namespace Dalamud.Interface.Internal.Windows
             }
         }
 
-        private void DrawSendFeedbackButton(PluginManifest manifest)
+        private void DrawSendFeedbackButton(PluginManifest manifest, bool isTesting)
         {
             ImGui.SameLine();
             if (ImGuiComponents.IconButton(FontAwesomeIcon.Comment))
             {
                 this.feedbackPlugin = manifest;
                 this.feedbackModalOnNextFrame = true;
+                this.feedbackIsTesting = isTesting;
             }
 
             if (ImGui.IsItemHovered())
@@ -1880,7 +1901,7 @@ namespace Dalamud.Interface.Internal.Windows
 
             return hasSearchString && !(
                 manifest.Name.ToLowerInvariant().Contains(searchString) ||
-                manifest.Author.Equals(this.searchText, StringComparison.InvariantCultureIgnoreCase) ||
+                (!manifest.Author.IsNullOrEmpty() && manifest.Author.Equals(this.searchText, StringComparison.InvariantCultureIgnoreCase)) ||
                 (manifest.Tags != null && manifest.Tags.Contains(searchString, StringComparer.InvariantCultureIgnoreCase)));
         }
 
@@ -1898,9 +1919,7 @@ namespace Dalamud.Interface.Internal.Windows
 
             // By removing installed plugins only when the available plugin list changes (basically when the window is
             // opened), plugins that have been newly installed remain in the available plugin list as installed.
-            this.pluginListAvailable = pluginManager.AvailablePlugins
-                .Where(manifest => !this.IsManifestInstalled(manifest).IsInstalled)
-                .ToList();
+            this.pluginListAvailable = pluginManager.AvailablePlugins.ToList();
             this.pluginListUpdatable = pluginManager.UpdatablePlugins.ToList();
             this.ResortPlugins();
 
@@ -2048,16 +2067,6 @@ namespace Dalamud.Interface.Internal.Windows
 
             #endregion
 
-            #region Tabs
-
-            public static string TabTitle_AvailablePlugins => Loc.Localize("InstallerAvailablePlugins", "Available Plugins");
-
-            public static string TabTitle_InstalledPlugins => Loc.Localize("InstallerInstalledPlugins", "Installed Plugins");
-
-            public static string TabTitle_InstalledDevPlugins => Loc.Localize("InstallerInstalledDevPlugins", "Installed Dev Plugins");
-
-            #endregion
-
             #region Tab body
 
             public static string TabBody_LoadingPlugins => Loc.Localize("InstallerLoading", "Loading plugins...");
@@ -2074,7 +2083,7 @@ namespace Dalamud.Interface.Internal.Windows
 
             public static string TabBody_SearchNoCompatible => Loc.Localize("InstallerNoCompatible", "No compatible plugins were found :( Please restart your game and try again.");
 
-            public static string TabBody_SearchNoInstalled => Loc.Localize("InstallerNoInstalled", "No plugins are currently installed. You can install them from the Available Plugins tab.");
+            public static string TabBody_SearchNoInstalled => Loc.Localize("InstallerNoInstalled", "No plugins are currently installed. You can install them from the \"All Plugins\" tab.");
 
             #endregion
 
@@ -2100,7 +2109,7 @@ namespace Dalamud.Interface.Internal.Windows
 
             public static string PluginTitleMod_OutdatedError => Loc.Localize("InstallerOutdatedError", " (outdated)");
 
-            public static string PluginTitleMod_BannedError => Loc.Localize("InstallerBannedError", " (banned)");
+            public static string PluginTitleMod_BannedError => Loc.Localize("InstallerBannedError", " (automatically disabled)");
 
             public static string PluginTitleMod_New => Loc.Localize("InstallerNewPlugin ", " New!");
 
@@ -2136,10 +2145,10 @@ namespace Dalamud.Interface.Internal.Windows
 
             public static string PluginBody_Outdated => Loc.Localize("InstallerOutdatedPluginBody ", "This plugin is outdated and incompatible at the moment. Please wait for it to be updated by its author.");
 
-            public static string PluginBody_Banned => Loc.Localize("InstallerBannedPluginBody ", "This plugin version is banned due to incompatibilities and not available at the moment. Please wait for it to be updated by its author.");
+            public static string PluginBody_Banned => Loc.Localize("InstallerBannedPluginBody ", "This plugin was automatically disabled due to incompatibilities and is not available at the moment. Please wait for it to be updated by its author.");
 
             public static string PluginBody_BannedReason(string message) =>
-                Loc.Localize("InstallerBannedPluginBodyReason ", "This plugin is banned: {0}").Format(message);
+                Loc.Localize("InstallerBannedPluginBodyReason ", "This plugin was automatically disabled: {0}").Format(message);
 
             #endregion
 

@@ -15,7 +15,7 @@ namespace Dalamud.Plugin.Internal.Types
         /// Gets the author/s of the plugin.
         /// </summary>
         [JsonProperty]
-        public string Author { get; init; }
+        public string? Author { get; init; }
 
         /// <summary>
         /// Gets or sets the public name of the plugin.
@@ -161,5 +161,20 @@ namespace Dalamud.Plugin.Internal.Types
         /// Gets an URL for the plugin's icon.
         /// </summary>
         public string? IconUrl { get; init; }
+
+        /// <summary>
+        /// Gets a value indicating whether this plugin accepts feedback.
+        /// </summary>
+        public bool AcceptsFeedback { get; init; } = true;
+
+        /// <summary>
+        /// Gets a message that is shown to users when sending feedback.
+        /// </summary>
+        public string? FeedbackMessage { get; init; }
+
+        /// <summary>
+        /// Gets a value indicating the webhook URL feedback is sent to.
+        /// </summary>
+        public string? FeedbackWebhook { get; init; }
     }
 }

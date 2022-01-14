@@ -1,10 +1,5 @@
-#define WIN32_LEAN_AND_MEAN
-#define DllExport extern "C" __declspec(dllexport)
+#include "pch.h"
 
-#include <filesystem>
-#include <Windows.h>
-#include "..\lib\CoreCLR\CoreCLR.h"
-#include "..\lib\CoreCLR\boot.h"
 #include "veh.h"
 
 HMODULE g_hModule;
@@ -35,6 +30,25 @@ bool is_running_on_linux()
     return pwine_get_version != nullptr || pwine_get_host_version != nullptr;
 }
 
+bool is_veh_enabled()
+{
+    size_t required_size;
+    getenv_s(&required_size, nullptr, 0, "DALAMUD_IS_STAGING");
+    if (required_size > 0)
+    {
+        if (char* is_no_veh = static_cast<char*>(malloc(required_size * sizeof(char))))
+        {
+            getenv_s(&required_size, is_no_veh, required_size, "DALAMUD_IS_STAGING");
+            auto result = _stricmp(is_no_veh, "true");
+            free(is_no_veh);
+            if (result == 0)
+                return true;
+        }
+    }
+
+    return false;
+}
+
 DllExport DWORD WINAPI Initialize(LPVOID lpParam)
 {
     #ifndef NDEBUG
@@ -50,7 +64,7 @@ DllExport DWORD WINAPI Initialize(LPVOID lpParam)
     std::wstring runtimeconfig_path = _wcsdup(fs_module_path.replace_filename(L"Dalamud.runtimeconfig.json").c_str());
     std::wstring module_path = _wcsdup(fs_module_path.replace_filename(L"Dalamud.dll").c_str());
 
-    // =========================================================================== //
+    // ============================== CLR ========================================= //
 
     void* entrypoint_vfn;
     int result = InitializeClrAndGetEntryPoint(
@@ -67,25 +81,29 @@ DllExport DWORD WINAPI Initialize(LPVOID lpParam)
     typedef void (CORECLR_DELEGATE_CALLTYPE* custom_component_entry_point_fn)(LPVOID);
     custom_component_entry_point_fn entrypoint_fn = reinterpret_cast<custom_component_entry_point_fn>(entrypoint_vfn);
 
-    printf("Initializing Dalamud... ");
-    entrypoint_fn(lpParam);
-    printf("Done!\n");
-
     // ============================== VEH ======================================== //
 
     printf("Initializing VEH... ");
     if(is_running_on_linux())
     {
-        printf("Failed! [Disabled for Wine]\n");
+        printf("VEH was disabled, running on linux\n");
     }
-    else
+    else if (is_veh_enabled())
     {
         if (veh::add_handler())
             printf("Done!\n");
         else printf("Failed!\n");
     }
+    else
+    {
+        printf("VEH was disabled manually\n");
+    }
 
-    // =========================================================================== //
+    // ============================== Dalamud ==================================== //
+
+    printf("Initializing Dalamud... ");
+    entrypoint_fn(lpParam);
+    printf("Done!\n");
 
     #ifndef NDEBUG
     fclose(stdin);

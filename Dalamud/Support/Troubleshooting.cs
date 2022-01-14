@@ -33,11 +33,13 @@ namespace Dalamud.Support
         {
             LastException = exception;
 
+            var fixedContext = context?.Split(new []{'\r', '\n'}, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+
             try
             {
                 var payload = new ExceptionPayload
                 {
-                    Context = context,
+                    Context = fixedContext,
                     When = DateTime.Now,
                     Info = exception.ToString(),
                 };
@@ -70,10 +72,10 @@ namespace Dalamud.Support
                     DalamudGitHash = Util.GetGitHash(),
                     GameVersion = startInfo.GameVersion.ToString(),
                     Language = startInfo.Language.ToString(),
-                    DoDalamudTest = configuration.DoDalamudTest,
+                    BetaKey = configuration.DalamudBetaKey,
                     DoPluginTest = configuration.DoPluginTest,
                     InterfaceLoaded = interfaceManager?.IsReady ?? false,
-                    ThirdRepo = configuration.ThirdRepoList,
+                    HasThirdRepo = configuration.ThirdRepoList is { Count: > 0 },
                     ForcedMinHook = EnvironmentConfiguration.DalamudForceMinHook,
                 };
 
@@ -92,7 +94,7 @@ namespace Dalamud.Support
 
             public string Info { get; set; }
 
-            public string Context { get; set; }
+            public string? Context { get; set; }
         }
 
         private class TroubleshootingPayload
@@ -107,7 +109,9 @@ namespace Dalamud.Support
 
             public string Language { get; set; }
 
-            public bool DoDalamudTest { get; set; }
+            public bool DoDalamudTest => false;
+
+            public string? BetaKey { get; set; }
 
             public bool DoPluginTest { get; set; }
 
@@ -115,7 +119,9 @@ namespace Dalamud.Support
 
             public bool ForcedMinHook { get; set; }
 
-            public List<ThirdPartyRepoSettings> ThirdRepo { get; set; }
+            public List<ThirdPartyRepoSettings> ThirdRepo => new();
+
+            public bool HasThirdRepo { get; set; }
         }
     }
 }

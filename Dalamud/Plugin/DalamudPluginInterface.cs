@@ -19,6 +19,7 @@ using Dalamud.Plugin.Internal;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Plugin.Ipc.Internal;
+using Dalamud.Utility;
 
 namespace Dalamud.Plugin
 {
@@ -141,7 +142,7 @@ namespace Dalamud.Plugin
 #if DEBUG
         public bool IsDebugging => true;
 #else
-        public bool IsDebugging => Service<DalamudInterface>.Get().IsDevMenuOpen;
+        public bool IsDebugging => Service<DalamudInterface>.GetNullable() is {IsDevMenuOpen: true}; // Can be null during boot
 #endif
 
         /// <summary>
@@ -383,12 +384,21 @@ namespace Dalamud.Plugin
         /// <summary>
         /// Unregister your plugin and dispose all references.
         /// </summary>
-        public void Dispose()
+        void IDisposable.Dispose()
         {
-            this.UiBuilder.Dispose();
+            this.UiBuilder.ExplicitDispose();
             Service<ChatGui>.Get().RemoveChatLinkHandler(this.pluginName);
             Service<Localization>.Get().LocalizationChanged -= this.OnLocalizationChanged;
             Service<DalamudConfiguration>.Get().DalamudConfigurationSaved -= this.OnDalamudConfigurationSaved;
+        }
+
+        /// <summary>
+        /// Obsolete implicit dispose implementation. Should not be used.
+        /// </summary>
+        [Obsolete("Do not dispose \"DalamudPluginInterface\".", true)]
+        public void Dispose()
+        {
+            // ignored
         }
 
         private void OnLocalizationChanged(string langCode)
